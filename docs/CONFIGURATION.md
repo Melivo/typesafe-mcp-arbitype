@@ -16,11 +16,11 @@ prompt instead.
 | Variable | Default | Description |
 | --- | --- | --- |
 | TYPESAFE_API_KEY | none | Required TypeSafe bearer credential. |
-| TYPESAFE_BASE_URL | https://api.typesafe.ai | TypeSafe API base URL. |
+| TYPESAFE_BASE_URL | <https://api.typesafe.ai> | TypeSafe API base URL. |
 | TYPESAFE_MODEL | jev-latest | Model alias; retained as a legacy-compatible setting. |
 | TYPESAFE_DEFAULT_MODEL | jev-latest | Default model used by the TypeSafe client. |
 | TYPESAFE_TIMEOUT_SECONDS | 10 | Timeout for each HTTP attempt. |
-| TYPESAFE_MAX_RETRIES | 2 | Retries after the initial request. |
+| TYPESAFE_MAX_RETRIES | 2 | Text retries after the initial request; image requests never retry automatically. |
 | TYPESAFE_RETRY_BACKOFF_SECONDS | 0.5 | Initial exponential retry backoff. |
 | TYPESAFE_MAX_STATE_CHARS | 120000 | Maximum serialized state size. |
 | TYPESAFE_MAX_QUESTION_CHARS | 60000 | Maximum serialized question size. |
@@ -51,6 +51,38 @@ a redirect target.
 
 Arbitype validates request limits before sending a paid request and validates
 provider responses before returning them to the MCP host.
+
+## Experimental inline images
+
+Only `evaluate` accepts an optional `assets` map with `format: png|jpg|jpeg`
+and canonical padded `data_base64` (optional `type: image`). Every image call
+requires explicit `allow_images: true`; this local field is not sent to the
+provider. The adapter constructs multipart and the experimental image header.
+There is no global image toggle and no path, URL or caller-supplied part input.
+
+Only `evaluate` also supports `type: box`: meaningful nonempty instructions,
+no `criteria` field (not even null), valid assets and explicit opt-in are
+required. Pair it with a separate presence Noul; no automatic gate is added.
+Box edges must be finite non-Boolean numbers with
+`0 <= left < right <= 1`, `0 <= top < bottom <= 1`; confidence must be a finite
+non-Boolean number in `[0,1]`. Invalid responses remain errors, not clamped boxes.
+Use an explicit compatible model (the synthetic recipe pins `jev-1.14.0`);
+the default model is unchanged and unsupported models remain provider errors.
+
+Fixed local limits: four assets, **256 KiB decoded files together**, sides
+**280–1568 px**, references **1024 UTF-8 bytes each / 65536 together**, and
+**32 MiB** conservative reference expansion. Existing state/question, serialized
+inline JSON, final HTTP body, response and STDIO limits still apply; increasing
+an environment limit does not increase the fixed image limits. Image requests
+have **zero automatic retries**, including timeouts and retryable HTTP errors.
+An error after sending may mean an unknown outcome, not permission to resend.
+
+PNG is limited to noninterlaced 8-bit grayscale/RGB with optional alpha and no
+ancillary metadata. JPEG is baseline 8-bit grayscale/three-component, one
+complete scan; local marker/scan checks do not decode entropy or pixels.
+Unsupported variants fail locally. Full contract, example and evidence limits:
+[IMAGE_SUPPORT.md](IMAGE_SUPPORT.md). Without assets the text behavior and
+environment defaults are unchanged; omitting assets is the nonactivation path.
 
 ## Operational guidance
 

@@ -95,6 +95,15 @@ Do not put a real key in fixtures, command history, `config.toml`, or issue
 reports. The host should forward it with `env_vars` (or its equivalent) in the
 MCP configuration.
 
+### Experimental image support
+
+The image contract, synthetic examples, offline-default local STDIO-MCP recipe,
+one-shot safety rules, and the bounded M01/M03/M04 evidence are documented in
+[docs/IMAGE_SUPPORT.md](docs/IMAGE_SUPPORT.md). The recipe is not part of the
+normal test suite; its default invocation makes no provider request. A live run
+is paid and requires separate task-specific authorization. The recorded M04
+attempt is consumed and must not be repeated.
+
 The CI quality gate also runs `scripts/official_sdk_smoke.py` with the official
 MCP Python SDK v2. It verifies that a real SDK client can negotiate the modern
 `2026-07-28` STDIO path, list the advertised tools, and call the local `health`

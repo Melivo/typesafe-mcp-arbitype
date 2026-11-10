@@ -32,6 +32,15 @@ def route_response(choice="inspect"):
 
 
 class HostContractTests(unittest.TestCase):
+    def test_image_fields_are_only_advertised_on_evaluate(self):
+        for tool in mcp.TOOLS:
+            properties = tool["inputSchema"]["properties"]
+            self.assertEqual("assets" in properties, tool["name"] == "evaluate")
+            self.assertEqual("allow_images" in properties, tool["name"] == "evaluate")
+        schema = mcp.TOOL_MAP["evaluate"]["inputSchema"]
+        self.assertEqual(schema["required"], ["state", "questions"])
+        self.assertEqual(schema["properties"]["assets"]["maxProperties"], 4)
+
     def test_server_instructions_fit_host_prefix_limit(self):
         self.assertLessEqual(len(mcp.SERVER_INSTRUCTIONS), 512)
         self.assertIn("Arbitype", mcp.SERVER_INSTRUCTIONS)
@@ -333,6 +342,82 @@ class CLISurfaceTests(unittest.TestCase):
 
 
 class StdioIntegrationTests(unittest.TestCase):
+    def test_stdio_box_transport_success_and_invalid_response(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from test_images import box_request, box_response
+
+        received = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):  # noqa: N802
+                received.append(self.rfile.read(int(self.headers["Content-Length"])))
+                value = box_response()
+                if len(received) == 2:
+                    value["answers"]["target"]["box"]["left"] = True
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps(value).encode())
+
+            def log_message(self, *_args):
+                pass
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        invalid = box_request()
+        invalid["questions"]["target"]["criteria"] = None
+        messages = [{"jsonrpc": "2.0", "id": index, "method": "tools/call",
+                     "params": {"name": "evaluate", "arguments": value}}
+                    for index, value in enumerate((invalid, box_request(), box_request()), 1)]
+        messages.extend([{"jsonrpc": "2.0", "id": 4, "method": "ping"},
+                         {"jsonrpc": "2.0", "method": "exit"}])
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-B", "server.py"], cwd=ROOT,
+                input="\n".join(json.dumps(message) for message in messages) + "\n",
+                text=True, capture_output=True, timeout=10, check=False,
+                env={**os.environ, "TYPESAFE_API_KEY": "synthetic-not-a-credential",
+                     "TYPESAFE_BASE_URL": f"http://127.0.0.1:{server.server_port}"},
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stderr, "")
+        results = [json.loads(line)["result"] for line in completed.stdout.splitlines()]
+        self.assertTrue(results[0]["isError"])
+        self.assertEqual(results[1]["structuredContent"], box_response())
+        self.assertTrue(results[2]["isError"])
+        self.assertNotIn("structuredContent", results[2])
+        self.assertEqual(results[3], {})
+        self.assertEqual(len(received), 2)
+        self.assertIn(b'"type":"box"', received[0])
+
+    def test_stdio_image_opt_in_failure_is_local_and_stream_survives(self):
+        from test_images import request
+
+        arguments = request()
+        arguments["allow_images"] = False
+        messages = [
+            {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "evaluate", "arguments": arguments}},
+            {"jsonrpc": "2.0", "id": 2, "method": "ping"},
+            {"jsonrpc": "2.0", "method": "exit"},
+        ]
+        completed = subprocess.run(
+            [sys.executable, "-B", "server.py"], cwd=ROOT,
+            input="\n".join(json.dumps(message) for message in messages) + "\n",
+            text=True, capture_output=True, timeout=5, check=False,
+            env={**os.environ, "TYPESAFE_API_KEY": "synthetic-not-a-credential"},
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        responses = [json.loads(line) for line in completed.stdout.splitlines()]
+        self.assertTrue(responses[0]["result"]["isError"])
+        self.assertIn("allow_images", responses[0]["result"]["content"][0]["text"])
+        self.assertEqual(responses[1]["result"], {})
+        self.assertEqual(completed.stderr, "")
+
     def test_stdio_handshake_tool_catalog_and_shutdown(self):
         messages = [
             {

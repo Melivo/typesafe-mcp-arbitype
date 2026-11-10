@@ -25,6 +25,7 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 from ._version import __version__
+from . import images
 
 
 SERVER_NAME = "arbitype"
@@ -301,7 +302,7 @@ def validate_request(arguments: Any, settings: Settings | None = None) -> JsonOb
     if settings is None:
         settings = Settings.from_env(require_key=False)
 
-    allowed = {"state", "questions", "model"}
+    allowed = {"state", "questions", "model", "assets", "allow_images"}
     unknown = sorted(set(arguments) - allowed)
     if unknown:
         raise BridgeError(f"unsupported argument(s): {', '.join(map(str, unknown))}")
@@ -337,9 +338,9 @@ def validate_request(arguments: Any, settings: Settings | None = None) -> JsonOb
             )
 
         question_type = question.get("type")
-        if question_type not in {"noul", "choice", "score"}:
+        if question_type not in {"noul", "choice", "score", "box"}:
             raise BridgeError(
-                f"question {question_id!r} has unsupported type; use noul, choice, or score"
+                f"question {question_id!r} has unsupported type; use noul, choice, score, or box"
             )
         if "instructions" not in question or not _is_structured(
             question["instructions"], allow_null=True
@@ -349,7 +350,14 @@ def validate_request(arguments: Any, settings: Settings | None = None) -> JsonOb
             )
 
         criteria = question.get("criteria")
-        if question_type == "noul":
+        if question_type == "box":
+            if "criteria" in question:
+                raise BridgeError(f"box question {question_id!r} does not accept criteria")
+            if not _has_structured_content(question["instructions"]):
+                raise BridgeError(f"box question {question_id!r} needs non-empty instructions")
+            if "assets" not in arguments or arguments.get("allow_images") is not True:
+                raise BridgeError("box questions require assets and explicit allow_images: true")
+        elif question_type == "noul":
             if criteria is not None:
                 if not isinstance(criteria, dict) or set(criteria) - {"true", "false"}:
                     raise BridgeError(
@@ -423,6 +431,17 @@ def validate_request(arguments: Any, settings: Settings | None = None) -> JsonOb
         "model": model.strip(),
         "questions": normalized_questions,
     }
+    if "allow_images" in arguments and not isinstance(arguments["allow_images"], bool):
+        raise BridgeError("allow_images must be a boolean")
+    if "assets" in arguments:
+        if arguments.get("allow_images") is not True:
+            raise BridgeError("assets require explicit allow_images: true")
+        try:
+            images.validate_assets(arguments["assets"], payload)
+        except ValueError as exc:
+            raise BridgeError(str(exc)) from exc
+        payload["assets"] = arguments["assets"]
+        payload["allow_images"] = True
     body = _json_bytes(payload, context="request")
     if len(body) > settings.max_request_bytes:
         raise BridgeError(
@@ -471,6 +490,19 @@ def validate_api_response(response: Any, questions: Mapping[str, Any]) -> JsonOb
         if expected_type == "noul":
             if not _is_number(answer.get("noul")) or not 0 <= answer["noul"] <= 1:
                 raise APIError(None, f"TypeSafe answer {question_id!r} has an invalid noul value")
+        elif expected_type == "box":
+            box = answer.get("box")
+            if (
+                not isinstance(box, dict)
+                or set(box) != {"left", "top", "right", "bottom"}
+                or not all(_is_number(value) and 0 <= value <= 1 for value in box.values())
+                or not box["left"] < box["right"]
+                or not box["top"] < box["bottom"]
+            ):
+                raise APIError(None, f"TypeSafe answer {question_id!r} has an invalid box")
+            confidence = answer.get("confidence")
+            if not _is_number(confidence) or not 0 <= confidence <= 1:
+                raise APIError(None, f"TypeSafe answer {question_id!r} has invalid confidence")
         elif expected_type == "choice":
             criteria = question["criteria"]
             choice = answer.get("choice")
@@ -643,21 +675,35 @@ def post_to_typesafe(
     settings = settings or Settings.from_env(require_key=True)
     normalized = validate_request(payload, settings)
     body = _json_bytes(normalized, context="request")
+    content_type = "application/json"
+    image_request = "assets" in normalized
+    if image_request:
+        try:
+            files = images.validate_assets(normalized["assets"], {
+                key: value for key, value in normalized.items() if key not in {"assets", "allow_images"}
+            })
+            body, content_type = images.multipart(normalized, files)
+        except ValueError as exc:
+            raise BridgeError(str(exc)) from exc
+        if len(body) > settings.max_request_bytes:
+            raise BridgeError(f"multipart request exceeds the {settings.max_request_bytes}-byte limit")
     if not settings.api_key:
         raise ConfigError("TYPESAFE_API_KEY is not set; set it in the MCP server environment")
 
     url = f"{settings.base_url}/v1/systemone"
     last_error: APIError | None = None
-    for attempt in range(settings.max_retries + 1):
+    max_retries = 0 if image_request else settings.max_retries
+    for attempt in range(max_retries + 1):
         request = Request(
             url,
             data=body,
             method="POST",
             headers={
                 "Authorization": f"Bearer {settings.api_key}",
-                "Content-Type": "application/json",
+                "Content-Type": content_type,
                 "Accept": "application/json",
                 "User-Agent": f"{SERVER_NAME}/{SERVER_VERSION}",
+                **({images.IMAGE_OPT_IN_HEADER: "true"} if image_request else {}),
             },
         )
         try:
@@ -687,11 +733,11 @@ def post_to_typesafe(
                 request_id=_response_request_id(exc),
                 retry_after=_retry_after_from_headers(getattr(exc, "headers", None)),
             )
-            if exc.code not in RETRYABLE_STATUSES or attempt >= settings.max_retries:
+            if exc.code not in RETRYABLE_STATUSES or attempt >= max_retries:
                 raise last_error from exc
         except (URLError, TimeoutError, socket.timeout, HTTPException, OSError) as exc:
             last_error = APIError(None, f"request failed: {type(exc).__name__}")
-            if attempt >= settings.max_retries:
+            if attempt >= max_retries:
                 raise last_error from exc
 
         assert last_error is not None

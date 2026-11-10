@@ -19,6 +19,7 @@ from .core import (
     TypeSafeClient,
     validate_request,
 )
+from .images import MAX_ASSETS, MAX_BASE64_CHARS
 
 
 STRUCTURED_VALUE_SCHEMA: dict[str, Any] = {
@@ -49,6 +50,15 @@ CRITERION_SCHEMA: dict[str, Any] = {
 }
 QUESTION_SCHEMA: dict[str, Any] = {
     "oneOf": [
+        {
+            "type": "object",
+            "properties": {
+                "type": {"const": "box"},
+                "instructions": STRUCTURED_VALUE_SCHEMA,
+            },
+            "required": ["type", "instructions"],
+            "additionalProperties": False,
+        },
         {
             "type": "object",
             "properties": {
@@ -254,8 +264,10 @@ def _tool(
 TOOLS = [
     _tool(
         "evaluate",
-        "USE WHEN you need raw typed Jev answers for one or more bounded noul, choice, or score "
-        "questions. DO NOT USE WHEN you need prose, code generation, arithmetic, dates, or a "
+        "USE WHEN you need raw typed Jev answers for bounded noul, choice, score, or box "
+        "questions, optionally with experimental inline PNG/JPEG assets and allow_images:true. "
+        "Box requires assets and opt-in; pair it with a separate presence Noul. "
+        "DO NOT USE WHEN you need prose, code generation, arithmetic, dates, action authorization, or a "
         "specialized primitive such as route or gate.",
         {
             "state": {**STRUCTURED_VALUE_SCHEMA, "description": "Text or structured evidence."},
@@ -267,6 +279,23 @@ TOOLS = [
                 "additionalProperties": QUESTION_SCHEMA,
             },
             "model": {"type": "string", "description": "Optional model id or alias."},
+            "allow_images": {"type": "boolean", "description": "Explicit per-request image opt-in; no automatic image retries."},
+            "assets": {
+                "type": "object",
+                "description": "1-4 inline PNG/JPEG images, 256 KiB decoded total; reference keys must occur in string values of state/instructions/criteria. Sides 280-1568 px; expansion <=32 MiB. PNG: noninterlaced 8-bit, no metadata. JPEG: baseline single scan, structural checks only. Existing request limits also apply.",
+                "minProperties": 1,
+                "maxProperties": MAX_ASSETS,
+                "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"const": "image"},
+                        "format": {"enum": ["png", "jpg", "jpeg"]},
+                        "data_base64": {"type": "string", "minLength": 1, "maxLength": MAX_BASE64_CHARS},
+                    },
+                    "required": ["format", "data_base64"],
+                    "additionalProperties": False,
+                },
+            },
         },
         ["state", "questions"],
         output_schema=EVALUATION_OUTPUT_SCHEMA,

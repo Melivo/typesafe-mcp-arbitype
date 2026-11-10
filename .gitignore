@@ -9,3 +9,7 @@ dist/
 .coverage
 .mypy_cache/
 .ruff_cache/
+
+# Local agent planning and provider state
+/.agentic-workflow/
+/.serena/

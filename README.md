@@ -1,32 +1,23 @@
-<div align="center">
-
 # Arbitype
 
-<p><strong>Typed decision tools for AI agents.</strong></p>
+**Typed decision tools for AI agents.**
 
-<p>Classify · Score · Verify · Gate · Route · Review</p>
+Classify · Score · Verify · Gate · Route · Review
 
-<p><strong>MCP-native · Powered by TypeSafe Jev</strong></p>
+**MCP-native · Powered by TypeSafe Jev**\
+[![Upstream CI](https://github.com/Renwang-Huang/arbitype/actions/workflows/ci.yml/badge.svg)](https://github.com/Renwang-Huang/arbitype/actions/workflows/ci.yml)
+[![Upstream latest release](https://img.shields.io/github/v/release/Renwang-Huang/arbitype?display_name=tag&sort=semver)](https://github.com/Renwang-Huang/arbitype/releases)
+[![Upstream Arbitype on PyPI](https://img.shields.io/pypi/v/arbitype?logo=pypi&logoColor=white)](https://pypi.org/project/arbitype/)
+[![Upstream MIT license](https://img.shields.io/github/license/Renwang-Huang/arbitype)](https://github.com/Renwang-Huang/arbitype/blob/main/LICENSE)
+![Python 3.10 or newer](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
+[![MCP 2026-07-28](https://img.shields.io/badge/MCP-2026--07--28-6F42C1)](https://github.com/modelcontextprotocol/modelcontextprotocol/tree/main/docs/specification/2026-07-28)
+[![Upstream Arbitype listed in the MCP Registry](https://img.shields.io/badge/MCP%20Registry-listed-2ea44f)](https://registry.modelcontextprotocol.io/?q=io.github.Renwang-Huang%2Farbitype)
 
-<p>
-  <a href="https://github.com/Renwang-Huang/arbitype/actions/workflows/ci.yml"><img src="https://github.com/Renwang-Huang/arbitype/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/Renwang-Huang/arbitype/releases"><img src="https://img.shields.io/github/v/release/Renwang-Huang/arbitype?display_name=tag&sort=semver" alt="Latest release"></a>
-  <a href="https://pypi.org/project/arbitype/"><img src="https://img.shields.io/pypi/v/arbitype?logo=pypi&logoColor=white" alt="Arbitype on PyPI"></a>
-  <a href="https://github.com/Renwang-Huang/arbitype/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Renwang-Huang/arbitype" alt="MIT license"></a>
-  <img src="https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white" alt="Python 3.10 or newer">
-  <a href="https://github.com/modelcontextprotocol/modelcontextprotocol/tree/main/docs/specification/2026-07-28"><img src="https://img.shields.io/badge/MCP-2026--07--28-6F42C1" alt="MCP 2026-07-28"></a>
-  <a href="https://registry.modelcontextprotocol.io/?q=io.github.Renwang-Huang%2Farbitype"><img src="https://img.shields.io/badge/MCP%20Registry-listed-2ea44f" alt="Arbitype listed in the MCP Registry"></a>
-</p>
-
-<p>
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#why-arbitype">Why Arbitype?</a> ·
-  <a href="#tools">Tools</a> ·
-  <a href="#benchmark-snapshot">Benchmarks</a> ·
-  <a href="#documentation">Documentation</a>
-</p>
-
-</div>
+[Quick start](#quick-start) ·
+[Why Arbitype?](#why-arbitype) ·
+[Tools](#tools) ·
+[Benchmarks](#benchmark-snapshot) ·
+[Documentation](#documentation)
 
 ## What is Arbitype?
 
@@ -34,39 +25,51 @@ Arbitype is an MCP-native typed decision layer for AI agents, powered by
 [TypeSafe Jev](https://typesafe.ai). It turns probabilistic judgments into
 structured decision primitives that an agent or program can consume directly.
 
-Arbitype is available on PyPI and the official MCP Registry.
+This repository is the public fork [Melivo/typesafe-mcp-arbitype](https://github.com/Melivo/typesafe-mcp-arbitype) of [Renwang-Huang/arbitype](https://github.com/Renwang-Huang/arbitype). It keeps the upstream product and package identity while adding experimental image support; fork-only changes are available from this GitHub source, not from the upstream PyPI package or MCP Registry listing. The upstream availability badges above describe upstream CI and releases only. This fork has not published its own PyPI package, MCP Registry listing, or fork release.
+
+The fork adds experimental `evaluate` support for inline PNG/JPEG `assets` and
+the `allow_images` opt-in, with Noul, Choice and Score questions plus Box
+localization. Two synthetic M04 cases were sent through the actual local MCP
+STDIO path to the provider (PNG and JPEG; Box was requested for PNG). These
+limited observations are not image-quality or production-readiness evidence;
+the [image guide](docs/IMAGE_SUPPORT.md) records their results and preserves
+the separate historical M01 and M03 findings.
 
 > [!NOTE]
 > Arbitype is an independent open-source project. It is not an official
 > TypeSafe AI product or an official integration for any particular agent host.
 
+The following MCP Registry name marker is retained for the upstream listing; it
+does not identify a separate fork Registry entry.
+
 <!-- mcp-name: io.github.Renwang-Huang/arbitype -->
 
 ## Quick Start
 
-The fastest way to connect an MCP host is a local STDIO server launched by
-uvx:
+To use the fork's changes, start from its source checkout. The PyPI package
+`arbitype` and the Registry listing belong to upstream and do not contain the
+fork-only changes.
 
 ~~~bash
+git clone https://github.com/Melivo/typesafe-mcp-arbitype.git
+cd typesafe-mcp-arbitype
 export TYPESAFE_API_KEY="your-key"
-uvx arbitype
+python3 -B server.py
 ~~~
 
-For a pinned, reproducible launch:
+Configure an MCP host to run `python3 -B` with the absolute path to
+`server.py` as its argument. Keep `TYPESAFE_API_KEY` in the host's process
+environment; do not put it in the command or MCP arguments.
+
+If you prefer `uvx`, install directly from the fork at a full commit ID:
 
 ~~~bash
-uvx --from 'arbitype==0.7.0' arbitype
+uvx --from 'git+https://github.com/Melivo/typesafe-mcp-arbitype.git@<full-commit>' arbitype
 ~~~
 
-Or install the package into the current environment:
-
-~~~bash
-python -m pip install arbitype
-arbitype
-~~~
-
-The API key stays in the process environment. It is not an MCP argument and
-is never printed to standard output.
+`<full-commit>` is an intentionally incomplete placeholder, not a usable
+revision. Replace it with the full commit ID you want to run; a branch name
+such as `main` is not a reproducible pin. No fork package version is implied.
 
 ### Host setup
 
@@ -100,13 +103,17 @@ export TYPESAFE_MODEL="jev-latest"
 See the [full configuration reference](docs/CONFIGURATION.md) for endpoints,
 timeouts, retries, and request/response limits.
 
-### Compatibility
+### Upstream compatibility identifiers
 
-arbitype is the canonical distribution, Python package, and CLI. Existing
-TypeSafe MCP users should migrate to Arbitype; see
+The package and compatibility command names below are retained for compatibility
+with upstream Arbitype and its migration path; their presence does not mean the
+fork has published those distributions. For upstream users, see
 [docs/REGISTRY_MIGRATION.md](docs/REGISTRY_MIGRATION.md).
 
 For the safe migration from the historical distribution:
+
+These uninstall/install commands describe the upstream migration path; they do
+not install this fork's changes.
 
 ~~~bash
 python -m pip uninstall typesafe-mcp
@@ -258,12 +265,13 @@ before using live credentials.
 - [MCP Registry migration](docs/REGISTRY_MIGRATION.md)
 - [Supply-chain posture](docs/SUPPLY_CHAIN.md)
 - [Observability proposal](docs/OBSERVABILITY.md)
+- [Experimental image support, limits, and local MCP recipe](docs/IMAGE_SUPPORT.md)
 - [Testing](TESTING.md)
 - [Benchmarks](BENCHMARK.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
-- [Official MCP Registry entry](https://registry.modelcontextprotocol.io/?q=io.github.Renwang-Huang%2Farbitype)
-- [Glama listing](https://glama.ai/mcp/servers/Renwang-Huang/arbitype) (indexing and metadata refresh may lag publication)
+- [Upstream MCP Registry entry](https://registry.modelcontextprotocol.io/?q=io.github.Renwang-Huang%2Farbitype)
+- [Upstream Glama listing](https://glama.ai/mcp/servers/Renwang-Huang/arbitype) (indexing and metadata refresh may lag publication)
 
 ## Development
 

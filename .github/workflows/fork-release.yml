@@ -1,0 +1,130 @@
+name: Experimental fork prerelease
+
+on:
+  push:
+    tags: ["fork-v*.*.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'Melivo/typesafe-mcp-arbitype' && github.event_name == 'push' && github.ref_type == 'tag' && !github.event.deleted
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      commit: ${{ steps.boundary.outputs.commit }}
+      wheel: ${{ steps.wheel.outputs.name }}
+      sha256: ${{ steps.wheel.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+      - name: Validate tag, version, trusted main and completed CI
+        id: boundary
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^fork-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$GITHUB_REF" == "refs/tags/$RELEASE_TAG" ]]
+          commit="$(git rev-parse HEAD)"
+          [[ "$commit" == "$GITHUB_SHA" ]]
+          [[ "$(git rev-parse "refs/tags/$RELEASE_TAG^{commit}")" == "$commit" ]]
+          git merge-base --is-ancestor "$commit" refs/remotes/origin/main
+          python - "$RELEASE_TAG" <<'PY'
+          import ast
+          import pathlib
+          import sys
+          tree = ast.parse(pathlib.Path('arbitype/_version.py').read_text())
+          values = [ast.literal_eval(n.value) for n in tree.body
+                    if isinstance(n, ast.Assign)
+                    and any(isinstance(t, ast.Name) and t.id == '__version__' for t in n.targets)]
+          assert values == [sys.argv[1].removeprefix('fork-v')], values
+          PY
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$commit&event=push&branch=main&per_page=1" \
+            --jq '.workflow_runs[0] | select(.status == "completed" and .conclusion == "success") | .id' \
+            | grep -Eq '^[0-9]+$'
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+      - name: Install CI-only lint tool
+        run: python -m pip install "ruff>=0.8,<1"
+      - name: Offline tests and lint
+        run: |
+          python -B -m unittest discover -s tests -v
+          python -m ruff check arbitype typesafe_mcp typesafe_codex_mcp server.py smoke_test.py scripts tests
+      - name: Build wheel and SHA256
+        id: wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip wheel --no-deps . --wheel-dir dist
+          wheels=(dist/*.whl)
+          [[ "${#wheels[@]}" == 1 && -f "${wheels[0]}" ]]
+          name="$(basename "${wheels[0]}")"
+          [[ "$name" =~ ^arbitype-[0-9]+\.[0-9]+\.[0-9]+-[A-Za-z0-9_.-]+\.whl$ ]]
+          cd dist
+          sha256sum "$name" > SHA256SUMS
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "sha256=$(sha256sum "$name" | cut -d ' ' -f 1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fork-wheel
+          path: |
+            dist/*.whl
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+
+  prerelease:
+    needs: build
+    if: github.repository == 'Melivo/typesafe-mcp-arbitype' && github.event_name == 'push' && github.ref_type == 'tag' && !github.event.deleted
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: fork-wheel
+          path: dist
+      - name: Revalidate remote boundaries and publish verified assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          EXPECTED_COMMIT: ${{ needs.build.outputs.commit }}
+          WHEEL: ${{ needs.build.outputs.wheel }}
+          SHA256: ${{ needs.build.outputs.sha256 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^fork-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ && "$EXPECTED_COMMIT" == "$GITHUB_SHA" ]]
+          [[ "$WHEEL" =~ ^arbitype-[0-9]+\.[0-9]+\.[0-9]+-[A-Za-z0-9_.-]+\.whl$ ]]
+          [[ "$SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" == "$EXPECTED_COMMIT" ]]
+          gh api "repos/$GITHUB_REPOSITORY/compare/$EXPECTED_COMMIT...main" \
+            --jq .status | grep -Eq '^(ahead|identical)$'
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$EXPECTED_COMMIT&event=push&branch=main&per_page=1" \
+            --jq '.workflow_runs[0] | select(.status == "completed" and .conclusion == "success") | .id' \
+            | grep -Eq '^[0-9]+$'
+          cd dist
+          [[ "$(find . -mindepth 1 -maxdepth 1 | wc -l)" == 2 ]]
+          [[ -f "$WHEEL" && ! -L "$WHEEL" && -f SHA256SUMS && ! -L SHA256SUMS ]]
+          printf '%s  %s\n' "$SHA256" "$WHEEL" | cmp - SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
+          gh release create "$RELEASE_TAG" "$WHEEL" SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --prerelease --latest=false \
+            --title "Experimental fork $RELEASE_TAG" --generate-notes
