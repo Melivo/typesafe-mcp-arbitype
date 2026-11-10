@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import image_mcp_probe as probe
 
@@ -129,6 +129,7 @@ class ProbeTests(unittest.TestCase):
     @unittest.skipUnless(probe.fixture.supports_safe_output(), "POSIX output required")
     def test_marker_before_start_duplicate_and_symlink(self):
         with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory).resolve()
             output = Path(directory) / "report.json"
             client = FakeClient()
 
@@ -175,9 +176,37 @@ class ProbeTests(unittest.TestCase):
         self.assertFalse(any(k.lower() in ("http_proxy", "https_proxy", "all_proxy") for k in env))
         self.assertNotIn("PYTHONPATH", env)
 
+    def test_windows_systemroot_allowlist_and_spawn(self):
+        inherited = {"SystemRoot": "C:\\Windows", "HTTPS_PROXY": "private",
+                     "PYTHONPATH": "private", "SSL_CERT_FILE": "private",
+                     "TYPESAFE_API_KEY": "synthetic"}
+
+        async def check():
+            with patch.dict(os.environ, inherited, clear=True), patch.object(
+                    probe.sys, "platform", "win32"), patch.object(
+                    probe.asyncio, "create_subprocess_exec", new_callable=AsyncMock) as spawn:
+                client = await probe.StdioClient().__aenter__()
+                env = spawn.call_args.kwargs["env"]
+                self.assertIs(client.process, spawn.return_value)
+                self.assertEqual(env["SystemRoot"], inherited["SystemRoot"])
+                self.assertEqual(set(env), {"PATH", "NO_PROXY", "TYPESAFE_API_KEY",
+                    "TYPESAFE_BASE_URL", "TYPESAFE_MODEL", "TYPESAFE_TIMEOUT_SECONDS",
+                    "TYPESAFE_MAX_RETRIES", "TYPESAFE_MAX_RESPONSE_BYTES", "SystemRoot"})
+                for name in ("HTTPS_PROXY", "PYTHONPATH", "SSL_CERT_FILE"):
+                    self.assertNotIn(name, env)
+            with patch.dict(os.environ, {}, clear=True), patch.object(probe.sys, "platform", "win32"):
+                self.assertNotIn("SystemRoot", probe.child_environment("synthetic"))
+            with patch.dict(os.environ, inherited, clear=True), patch.object(probe.sys, "platform", "linux"):
+                self.assertNotIn("SystemRoot", probe.child_environment("synthetic"))
+
+        asyncio.run(check())
+
 
 class StdioTests(unittest.TestCase):
     def test_real_stdio_both_images_with_loopback_provider(self):
+        child_env = {"TYPESAFE_API_KEY": "synthetic"}
+        if "SystemRoot" in os.environ:
+            child_env["SystemRoot"] = os.environ["SystemRoot"]
         import threading
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -210,7 +239,7 @@ class StdioTests(unittest.TestCase):
             report = {"calls_started": 0, "cases": []}
 
             async def check():
-                with patch.dict(os.environ, {"TYPESAFE_API_KEY": "synthetic"}, clear=True), patch.object(
+                with patch.dict(os.environ, child_env, clear=True), patch.object(
                         probe, "child_environment", side_effect=local_environment), patch.object(
                         probe.fixture, "write_report"):
                     await probe.exchange(report, stream, prepared, probe.StdioClient)
@@ -226,8 +255,11 @@ class StdioTests(unittest.TestCase):
             thread.join(timeout=2)
 
     def test_real_child_handshake_catalog_cleanup_without_provider(self):
+        child_env = {"TYPESAFE_API_KEY": "synthetic"}
+        if "SystemRoot" in os.environ:
+            child_env["SystemRoot"] = os.environ["SystemRoot"]
         async def check():
-            with patch.dict(os.environ, {"TYPESAFE_API_KEY": "synthetic"}, clear=True):
+            with patch.dict(os.environ, child_env, clear=True):
                 async with probe.StdioClient() as client:
                     initialized = await client.call("initialize", {"protocolVersion": probe.PROTOCOL})
                     self.assertEqual(initialized["protocolVersion"], probe.PROTOCOL)

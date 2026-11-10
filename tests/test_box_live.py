@@ -74,7 +74,8 @@ class BoxProbeTests(unittest.TestCase):
     @unittest.skipUnless(probe.fixture.supports_safe_output(), "safe POSIX output required")
     def test_reservation_fsync_before_send_whitelist_hashes_and_raw_presence(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, TYPESAFE_API_KEY="synthetic-private"):
-            output = Path(directory) / "report"
+            directory = Path(directory).resolve()
+            output = directory / "report"
             network = Mock()
             fsync = os.fsync
             syncs = []
@@ -123,6 +124,7 @@ class BoxProbeTests(unittest.TestCase):
                      URLError("private"), opened(invalid), opened(wrong_model), opened(wrong_geometry),
                      io.BytesIO(b"not json"), io.BytesIO(b"x" * (probe.MAX_RESPONSE_BYTES + 1))]
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, TYPESAFE_API_KEY="synthetic"):
+            directory = Path(directory).resolve()
             for index, scenario in enumerate(scenarios):
                 network = Mock()
                 if isinstance(scenario, Exception):
@@ -160,7 +162,7 @@ class BoxProbeTests(unittest.TestCase):
         network = Mock()
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, TYPESAFE_API_KEY="synthetic"):
             with self.assertRaises(OSError):
-                probe.run(Path(directory) / "missing-parent" / "report", live=True, opener=network)
+                probe.run(Path(directory).resolve() / "missing-parent" / "report", live=True, opener=network)
             network.open.assert_not_called()
         with patch.dict(os.environ, TYPESAFE_API_KEY="synthetic"), \
                 patch.object(probe.fixture, "supports_safe_output", return_value=False):

@@ -72,10 +72,13 @@ def cases():
 
 def child_environment(key):
     # No inherited proxy, Python injection, endpoint, TLS or retry overrides.
-    return {"PATH": os.defpath, "NO_PROXY": "*", "TYPESAFE_API_KEY": key,
+    env = {"PATH": os.defpath, "NO_PROXY": "*", "TYPESAFE_API_KEY": key,
             "TYPESAFE_BASE_URL": "https://api.typesafe.ai", "TYPESAFE_MODEL": MODEL,
             "TYPESAFE_TIMEOUT_SECONDS": "60", "TYPESAFE_MAX_RETRIES": "0",
             "TYPESAFE_MAX_RESPONSE_BYTES": str(fixture.MAX_RESPONSE_BYTES)}
+    if sys.platform == "win32" and "SystemRoot" in os.environ:
+        env["SystemRoot"] = os.environ["SystemRoot"]
+    return env
 
 
 class StdioClient:

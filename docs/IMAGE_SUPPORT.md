@@ -361,6 +361,16 @@ records exactly two synthetic requests and MCP protocol `2025-06-18`:
   **599 input / 68 output tokens**. The gray expectation follows the fixed
   fixture's construction; the report does not claim pixel verification.
 
+The report's eight source hashes bind the historical published source at
+commit `b5cb07b01dcb0aa962bf234b28ed7de2d1bc0074`, not every later checkout.
+The subsequent cross-platform repair canonicalizes only test-owned temporary
+directories and forwards only an existing Windows `SystemRoot` to the isolated
+probe child. The probe and its test source have therefore changed; their old
+report hashes are not current-source matches. The product `core.py`, `mcp.py`
+and `images.py` remain at the report's source hashes. The report and its
+historical results remain unchanged, with no new live attempt. Linux offline
+regressions do not establish Windows/macOS CI success.
+
 Both calls returned validated answers from `jev-1.14.0`; the fixture-specific
 Choice expectations matched. Noul and Score remain raw signals without a new
 threshold. The result demonstrates only these synthetic MCP cases and the

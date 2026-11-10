@@ -1,7 +1,7 @@
 """Offline safeguards for the isolated M01 recipe."""
 
 import copy
-from contextlib import ExitStack, redirect_stdout
+from contextlib import ExitStack, nullcontext, redirect_stdout
 from functools import partial
 import io
 import json
@@ -23,6 +23,23 @@ def response():
 
 
 class ImageFeasibilityTests(unittest.TestCase):
+    def test_temporary_symlink_prefix_is_resolved_before_output(self):
+        # Model a /var-style alias without requiring Windows symlink privileges.
+        with tempfile.TemporaryDirectory() as directory:
+            canonical = Path(directory).resolve()
+            alias = canonical / "synthetic-symlink-prefix"
+            resolve = Path.resolve
+
+            def resolve_prefix(path, *args, **kwargs):
+                if path == alias:
+                    return canonical
+                return resolve(path, *args, **kwargs)
+
+            with patch.object(tempfile, "TemporaryDirectory", return_value=nullcontext(str(alias))), \
+                    patch.object(Path, "resolve", autospec=True, side_effect=resolve_prefix) as resolved:
+                self.test_missing_posix_capabilities_stop_before_transport()
+            self.assertEqual(sum(call.args[0] == alias for call in resolved.call_args_list), 4)
+
     def test_fixture_and_multipart(self):
         png = probe.synthetic_png()
         probe.verify_fixture(png)
@@ -70,7 +87,7 @@ class ImageFeasibilityTests(unittest.TestCase):
     def test_missing_posix_capabilities_stop_before_transport(self):
         for missing in ("posix", "dir_fd", "O_DIRECTORY", "O_NOFOLLOW"):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
-                output = Path(directory) / "report.json"
+                output = Path(directory).resolve() / "report.json"
                 transport = unittest.mock.Mock()
                 with ExitStack() as stack:
                     stack.enter_context(patch.dict(os.environ, TYPESAFE_API_KEY="synthetic"))
@@ -94,7 +111,7 @@ class ImageFeasibilityTests(unittest.TestCase):
     def test_post_send_fsync_failure_keeps_marker_and_never_retries(self):
         with tempfile.TemporaryDirectory() as directory, \
                 patch.dict(os.environ, TYPESAFE_API_KEY="synthetic-private"):
-            output = Path(directory) / "report.json"
+            output = Path(directory).resolve() / "report.json"
             transport = unittest.mock.Mock(return_value=(200, json.dumps(response()).encode()))
             with patch.object(probe, "run", partial(probe.run, transport=transport)), \
                     patch.object(probe.os, "fsync", side_effect=[None, None, OSError("synthetic-private")]), \
@@ -115,6 +132,7 @@ class ImageFeasibilityTests(unittest.TestCase):
     def test_exclusive_attempt_and_safe_report(self):
         calls = []
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, TYPESAFE_API_KEY="fake-private-key"):
+            directory = Path(directory).resolve()
             output = Path(directory) / "report.json"
 
             def transport(body, boundary, key):
@@ -138,6 +156,13 @@ class ImageFeasibilityTests(unittest.TestCase):
             parent.symlink_to(directory, target_is_directory=True)
             with self.assertRaises(OSError):
                 probe.run(parent / "other", live=True, transport=transport)
+            with tempfile.TemporaryDirectory(dir=parent) as aliased_directory:
+                canonical_output = Path(aliased_directory).resolve() / "report.json"
+                def prefix_transport(*_args):
+                    marker = json.loads(canonical_output.read_text())
+                    self.assertEqual(marker["status"], "attempt_reserved_outcome_unknown")
+                    return 200, json.dumps(response()).encode()
+                self.assertEqual(probe.run(canonical_output, live=True, transport=prefix_transport), 0)
 
     @unittest.skipUnless(probe.supports_safe_output(), "safe POSIX output required")
     def test_failure_and_interruption_never_retry(self):
@@ -145,6 +170,7 @@ class ImageFeasibilityTests(unittest.TestCase):
                      (500, b"private"), (200, b"not json"),
                      (200, b"x" * (probe.MAX_RESPONSE_BYTES + 1))]
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, TYPESAFE_API_KEY="fake-private-key"):
+            directory = Path(directory).resolve()
             for index, result in enumerate(scenarios):
                 output = Path(directory) / str(index)
                 with patch.object(probe, "send", return_value=result) as transport:
