@@ -4,6 +4,15 @@ Arbitype exposes a local MCP STDIO server. The setup command can add that
 server to supported host configuration files without copying the API key into
 those files.
 
+The generated entry runs `uvx arbitype`, which resolves the upstream PyPI
+distribution. It does not install or run fork-only changes from this source
+checkout. To use this fork's experimental image support, configure the host to
+run `python3 -B` with the absolute path to this checkout's `server.py`, or use
+`uvx --from 'git+https://github.com/Melivo/typesafe-mcp-arbitype.git@<full-commit>' arbitype`.
+Replace the placeholder with a full commit ID. Keep `TYPESAFE_API_KEY` in the
+host process environment; the [README quick start](../README.md#quick-start)
+shows the source-checkout command.
+
 ## Supported hosts
 
 | Host | Configuration | Managed format |

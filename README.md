@@ -73,6 +73,12 @@ such as `main` is not a reproducible pin. No fork package version is implied.
 
 ### Host setup
 
+The `arbitype setup` examples below generate a host entry that runs
+`uvx arbitype`, which resolves the upstream PyPI distribution. That entry does
+not run this fork's experimental image changes. For this fork, use the source
+checkout command above or pin `uvx` to a full fork commit as shown above; see
+[the host guide](docs/HOST_SETUP.md) for the distinction.
+
 Inspect detected hosts before writing anything:
 
 ~~~bash

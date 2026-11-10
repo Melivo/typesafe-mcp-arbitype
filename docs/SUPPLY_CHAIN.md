@@ -3,7 +3,12 @@
 Arbitype keeps its runtime dependency-free and hardens the release path around
 that small surface.
 
-## Current controls
+## Upstream release controls
+
+The PyPI and MCP Registry publishing controls below belong to the upstream
+`Renwang-Huang/arbitype` workflows. They are skipped in this fork and do not
+publish fork changes. This fork uses the separate GitHub prerelease process in
+[FORK_RELEASES.md](FORK_RELEASES.md); it has no fork PyPI or Registry publisher.
 
 - PyPI publication uses OIDC trusted publishing; no package token is stored in
   the repository.
