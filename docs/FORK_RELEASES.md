@@ -6,7 +6,7 @@ This is the release contract for `Melivo/typesafe-mcp-arbitype`, a fork of
 support is experimental; a GitHub prerelease is not a production-readiness
 claim or a TypeSafe authorization decision.
 
-## Future human approval
+## Version and release approval
 
 Configuring this workflow does not create a tag, release, or version bump.
 Before a future release, a maintainer must review the changes and explicitly
@@ -24,12 +24,29 @@ that commit. The tag version must equal the package version exactly, without
 leading zeroes, suffixes, or an inferred next version. Ordinary pushes and PRs
 do not publish fork releases; there is no manual-dispatch release shortcut.
 
-Restrict `main` and `fork-v*` tag creation to trusted maintainers through GitHub
-branch/tag rules; forbid tag updates/deletions and require reviewed workflow
-changes. Configure these protections before using the automation. YAML cannot
-protect against an administrator or authorized writer replacing the workflow
-or racing a tag update. These protections are operational prerequisites, not
-settings installed by this change.
+## Current GitHub protections
+
+As observed through the GitHub API on **2026-11-10**, four active repository
+rulesets protect this release path:
+
+- `main-integrity-and-ci` (26927034) applies to `main`: deletion and
+  non-fast-forward updates are prohibited, all 17 required GitHub Actions
+  status checks (integration ID `15368`) must pass on the latest commit, and
+  there are no bypass actors.
+- `main-reviewed-pull-requests` (26927035) applies to `main`: one approving
+  review is required, stale approvals are dismissed, and review threads must
+  be resolved. The `Melivo` account has a `pull_requests_only` bypass exception;
+  this is not a universal independent-approval guarantee.
+- `fork-release-tag-creation` (26927058) applies to `fork-v*` tags: the
+  `Melivo` account is the sole configured bypass actor for the creation rule.
+- `fork-release-tag-immutability` (26927060) applies to `fork-v*` tags:
+  updates and deletions are prohibited, with no configured bypass actors.
+
+These are the currently observed GitHub settings, not protections installed by
+the workflow. Repository administrators can change rulesets, and this document
+does not claim that YAML or the settings prevent an administrator from changing
+the enforcement configuration or workflow. Recheck the live rulesets before a
+future release; do not run destructive enforcement tests.
 
 ## Checks, artifacts, and permissions
 

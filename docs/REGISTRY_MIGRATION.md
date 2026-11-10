@@ -6,6 +6,11 @@ Arbitype uses the new canonical identity:
 io.github.Renwang-Huang/arbitype
 ```
 
+This migration and its publisher procedure describe upstream
+`Renwang-Huang/arbitype` only. The `Melivo/typesafe-mcp-arbitype` fork has no
+PyPI or MCP Registry publication; its release path is a GitHub prerelease
+([fork release contract](FORK_RELEASES.md)).
+
 The former identity remains a legacy entry:
 
 ```text
